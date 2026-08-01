@@ -18,7 +18,7 @@ DEFAULT_SELECTOR = "table"
 # URLの順番（0から始まる番号）に合わせて、個別のセレクタを指定します
 # 例: 0番目はそのままtable、1番目（2つ目のURL）はbodyにする場合
 CUSTOM_SELECTORS = {
-    # 1: "body",
+    1: "body",
 }
 
 
