@@ -1,0 +1,44 @@
+name: Web Monitoring Workflow
+
+on:
+  schedule:
+    # 30分間隔で自動実行
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests playwright
+          playwright install --with-deps chromium
+
+      - name: Run Script
+        env:
+          # Secretsから2つの環境変数をPythonに渡す
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+        run: python monitor.py
+
+      - name: Commit state change
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # last_state.txt ではなく state_*.txt を対象にする
+          git add state_*.txt
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update state files" && git push)
