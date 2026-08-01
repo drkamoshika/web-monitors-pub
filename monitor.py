@@ -1,5 +1,6 @@
 import os
 import hashlib
+import difflib
 import requests
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
@@ -43,10 +44,41 @@ def send_ntfy_notification(title, message):
     except Exception as e:
         print(f"ntfy通知の送信に失敗しました: {e}")
 
+
 def get_state_filename(url):
     """URLごとに固有の保存ファイル名を生成する"""
-    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+    url_hash = hashlib.md5(url.encode("utf-8")).hexdigest()
     return f"state_{url_hash}.txt"
+
+
+def generate_diff_summary(old_text, new_text, max_lines=10):
+    """前回と今回のテキストを比較し、差分（追加・削除行）の抜粋を作成する"""
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+
+    # 行単位の差分（unified_diff）を取得
+    diff = list(difflib.unified_diff(old_lines, new_lines, lineterm=""))
+
+    # ヘッダー（---, +++）を除外し、変化があった行（+ または - で始まる行）のみ抽出
+    diff_lines = [
+        line
+        for line in diff
+        if (line.startswith("+") or line.startswith("-"))
+        and not (line.startswith("---") or line.startswith("+++"))
+    ]
+
+    if not diff_lines:
+        return "（明確なテキスト差分を抽出できませんでした）"
+
+    # 差分が長すぎる場合は指定行数でカットする
+    if len(diff_lines) > max_lines:
+        summary = "\n".join(diff_lines[:max_lines])
+        summary += f"\n...他 {len(diff_lines) - max_lines} 行の変更あり"
+    else:
+        summary = "\n".join(diff_lines)
+
+    return summary
+
 
 def process_url(page, url, selector):
     """単一のURLに対する監視処理"""
@@ -56,11 +88,11 @@ def process_url(page, url, selector):
         return
 
     state_file = get_state_filename(url)
-    
+
     try:
         print(f"\n--- アクセス中: {url} ---")
         print(f"監視セレクタ: {selector}")
-        
+
         # アクセス処理（タイムアウト30秒）
         page.goto(url, wait_until="networkidle", timeout=30000)
 
@@ -84,10 +116,23 @@ def process_url(page, url, selector):
         # 比較・判定と保存
         if last_text != "" and current_text != last_text:
             print(f"【検知】更新を確認: {url}")
-            send_ntfy_notification(
-                title="【更新検知】予約状況が変わりました！",
-                message=f"カレンダー等の内容に変更がありました。\n{url}"
+
+            # 差分の抜粋を生成
+            diff_summary = generate_diff_summary(last_text, current_text)
+
+            # ntfyに送信する本文を作成
+            notification_message = (
+                f"【対象URL】\n{url}\n\n"
+                f"【変更の抜粋】\n"
+                f"(-: 削除 / +: 追加)\n"
+                f"{diff_summary}"
             )
+
+            send_ntfy_notification(
+                title="【更新検知】予約状況・内容が変わりました！",
+                message=notification_message,
+            )
+
             with open(state_file, "w", encoding="utf-8") as f:
                 f.write(current_text)
 
@@ -95,7 +140,7 @@ def process_url(page, url, selector):
             print("初回実行のため、現在の状態を記録します。")
             with open(state_file, "w", encoding="utf-8") as f:
                 f.write(current_text)
-                
+
         else:
             print("変更はありませんでした。")
 
@@ -103,7 +148,7 @@ def process_url(page, url, selector):
         error_msg = f"アクセス失敗 ({url})\n詳細: {e}"
         print(f"【エラー】{error_msg}")
         send_ntfy_notification("【監視エラー】アクセス失敗", error_msg)
-        
+
     except Exception as e:
         error_msg = f"予期せぬエラー ({url})\n詳細: {e}"
         print(f"【エラー】{error_msg}")
@@ -136,6 +181,6 @@ def main():
         finally:
             browser.close()
 
+
 if __name__ == "__main__":
     main()
-    
