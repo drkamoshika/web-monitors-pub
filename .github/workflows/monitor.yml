@@ -1,9 +1,9 @@
 name: Web Monitoring Workflow
 
 on:
-  schedule:
-    # 30分間隔で自動実行
-    - cron: '*/30 * * * *'
+  # schedule:
+  #   # 30分間隔で自動実行
+  #   - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
