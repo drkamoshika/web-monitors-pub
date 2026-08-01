@@ -18,8 +18,7 @@ DEFAULT_SELECTOR = "table"
 # URLの順番（0から始まる番号）に合わせて、個別のセレクタを指定します
 # 例: 0番目はそのままtable、1番目（2つ目のURL）はbodyにする場合
 CUSTOM_SELECTORS = {
-    1: "body",
-    # 2: ".content",  # さらに追加したい場合はこのように書きます
+    # 1: "body",
 }
 
 
@@ -138,70 +137,5 @@ def main():
             browser.close()
 
 if __name__ == "__main__":
-    main()            current_text = page.locator("body").inner_text()
-
-        current_text = current_text.strip()
-
-        # 前回保存したテキスト状態の読み込み
-        last_text = ""
-        if os.path.exists(state_file):
-            with open(state_file, "r", encoding="utf-8") as f:
-                last_text = f.read().strip()
-
-        # 比較・判定と保存
-        if last_text != "" and current_text != last_text:
-            print(f"【検知】更新を確認: {url}")
-            send_ntfy_notification(
-                title="【更新検知】予約状況が変わりました！",
-                message=f"カレンダー等の内容に変更がありました。\n{url}"
-            )
-            with open(state_file, "w", encoding="utf-8") as f:
-                f.write(current_text)
-
-        elif last_text == "":
-            print("初回実行のため、現在の状態を記録します。")
-            with open(state_file, "w", encoding="utf-8") as f:
-                f.write(current_text)
-                
-        else:
-            print("変更はありませんでした。")
-
-    except PlaywrightError as e:
-        error_msg = f"アクセス失敗 ({url})\n詳細: {e}"
-        print(f"【エラー】{error_msg}")
-        send_ntfy_notification("【監視エラー】アクセス失敗", error_msg)
-        
-    except Exception as e:
-        error_msg = f"予期せぬエラー ({url})\n詳細: {e}"
-        print(f"【エラー】{error_msg}")
-        send_ntfy_notification("【監視エラー】システムエラー", error_msg)
-
-
-def main():
-    if not NTFY_TOPIC:
-        print("環境変数 'NTFY_TOPIC' が設定されていません。")
-        return
-
-    if not TARGET_URLS_RAW:
-        error_msg = "環境変数 'TARGET_URL' が設定されていません。"
-        print(error_msg)
-        send_ntfy_notification("【設定エラー】", error_msg)
-        return
-
-    # カンマ区切りで複数のURLをリスト化
-    url_list = TARGET_URLS_RAW.split(",")
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        # 1つのブラウザタブ（page）を使い回して順番にアクセスする
-        page = browser.new_page()
-
-        try:
-            for url in url_list:
-                process_url(page, url)
-        finally:
-            browser.close()
-
-if __name__ == "__main__":
     main()
-  
+    
