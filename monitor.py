@@ -22,6 +22,8 @@ if GEMINI_API_KEY:
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
     )
 
+    MODEL = "gemini-2.5-flash-lite"
+
 # ==========================================
 # オプション設定
 # ==========================================
@@ -108,12 +110,12 @@ def get_llm_summary(old_text, new_text):
 
     try:
         response = client.chat.completions.create(
-            model="gemini-2.0-flash",
+            model=MODEL,
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150,
-            temperature=0.3,
+            max_tokens=200,
+            temperature=0.7,
         )
         summary = response.choices[0].message.content.strip()
         print("Gemini API (OpenAI SDK) での要約生成に成功しました。")
