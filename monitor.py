@@ -3,7 +3,6 @@ import hashlib
 import difflib
 import requests
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
-from openai import OpenAI
 
 # ==========================================
 # 設定値の読み込み
@@ -21,7 +20,7 @@ USE_LLM_SUMMARY = True
 # 監視範囲（CSSセレクタ）の設定
 DEFAULT_SELECTOR = "table"
 CUSTOM_SELECTORS = {
-    1: "body",
+    # 1: "body",
 }
 
 
@@ -79,49 +78,59 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """OpenAI SDKを利用してGeminiに要約を依頼する"""
+    """Google Gemini API（直通REST API）で要約を生成する"""
     if not GEMINI_API_KEY:
         return "（エラー: GEMINI_API_KEYが設定されていません）"
 
-    # OpenAI互換エンドポイントでGeminiクライアントを初期化
-    client = OpenAI(
-        api_key=GEMINI_API_KEY,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-    )
-
     prompt = f"""
-        あなたはウェブサイトの監視アシスタントです。
-        以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
-        どのような情報が更新されたのか、ユーザーがスマホの通知で一目でわかるように、簡潔な日本語で要約してください。
-        挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
-        
-        【古いテキスト】
-        {old_text[:1000]}
-        
-        【新しいテキスト】
-        {new_text[:1000]}
-        """
+あなたはウェブサイトの監視アシスタントです。
+以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
+どのような情報が更新されたのか、ユーザーがスマホの通知で一目でわかるように、簡潔な日本語で要約してください。
+挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
 
-    # 無料枠で動作するモデルの候補一覧（優先順位順）
-    candidate_models = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash-latest"
-    ]
+【古いテキスト】
+{old_text[:1000]}
 
-    for model_name in candidate_models:
+【新しいテキスト】
+{new_text[:1000]}
+"""
+
+    # 試行する公式モデル名（優先順）
+    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+
+    for model_name in models:
+        # OpenAI SDKを使わず、Googleの直通エンドポイントを直接叩く
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "maxOutputTokens": 150,
+                "temperature": 0.3
+            }
+        }
+
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=150,
-                temperature=0.3
+            response = requests.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=15
             )
-            print(f"要約生成成功 (モデル: {model_name})")
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"モデル '{model_name}' での生成を試みましたがスキップします: {e}")
 
-    return "（LLM要約の取得に失敗しました）"
+            if response.status_code == 200:
+                res_data = response.json()
+                summary = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                print(f"Gemini要約生成成功 (モデル: {model_name})")
+                return summary
+            else:
+                print(f"Gemini APIエラー [{model_name}] ({response.status_code}): {response.text}")
+
+        except Exception as e:
+            print(f"Gemini API通信エラー [{model_name}]: {e}")
+
+    return "（AI要約の取得に失敗しました）"
 
 
 def process_url(page, url, selector):
@@ -227,4 +236,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
