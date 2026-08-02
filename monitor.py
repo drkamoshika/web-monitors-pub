@@ -2,6 +2,7 @@ import os
 import hashlib
 import difflib
 import requests
+from openai import OpenAI
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
 # ==========================================
@@ -12,6 +13,16 @@ TARGET_URLS_RAW = os.getenv("TARGET_URL")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==========================================
+# OpenAI SDK の初期化 (Google Gemini 互換エンドポイント)
+# ==========================================
+client = None
+if GEMINI_API_KEY:
+    client = OpenAI(
+        api_key=GEMINI_API_KEY,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+
+# ==========================================
 # オプション設定
 # ==========================================
 # LLM（Gemini）による要約機能を使うかどうか (True: 使う / False: 使わない)
@@ -20,7 +31,7 @@ USE_LLM_SUMMARY = True
 # 監視範囲（CSSセレクタ）の設定
 DEFAULT_SELECTOR = "table"
 CUSTOM_SELECTORS = {
-    # 1: "body",
+    1: "body",
 }
 
 
@@ -78,9 +89,9 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """Google Gemini API（USプロキシ経由）で要約を生成する"""
-    if not GEMINI_API_KEY:
-        return "（エラー: GEMINI_API_KEYが設定されていません）"
+    """OpenAI SDK 経由で Gemini API を呼び出して要約を生成する"""
+    if not client:
+        return "（エラー: GEMINI_API_KEY が設定されていません）"
 
     prompt = f"""
         あなたはウェブサイトの監視アシスタントです。
@@ -95,38 +106,23 @@ def get_llm_summary(old_text, new_text):
         {new_text[:1000]}
         """
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 150, "temperature": 0.3}
-    }
-
-    # 公開されているUSの無料プロキシ（例）：EUリージョンでの実行になるとgemini APIの無料枠が弾かれるため
-    proxies = {
-        "http": "http://154.21.27.8:3128",
-        "https": "http://154.21.27.8:3128",
-    }
-
     try:
-        response = requests.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            proxies=proxies,
-            timeout=15
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
+            temperature=0.3,
         )
-
-        if response.status_code == 200:
-            res_data = response.json()
-            return res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        else:
-            print(f"Gemini APIエラー ({response.status_code}): {response.text}")
+        summary = response.choices[0].message.content.strip()
+        print("Gemini API (OpenAI SDK) での要約生成に成功しました。")
+        return summary
 
     except Exception as e:
-        print(f"Gemini API通信エラー: {e}")
+        print(f"Gemini API エラー (OpenAI SDK): {e}")
 
     return "（AI要約の取得に失敗しました）"
-    
 
 
 def process_url(page, url, selector):
@@ -232,3 +228,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
