@@ -156,14 +156,20 @@ def process_url(page, url, selector):
             llm_summary = ""
             if USE_LLM_SUMMARY:
                 print("LLMで要約を生成中...")
-                llm_summary = f"\n\n【AI要約】\n{get_llm_summary(last_text, current_text)}"
+                llm_summary = f"\n\n【要約】\n{get_llm_summary(last_text, current_text)}"
 
-            # 通知メッセージの組み立て
-            notification_message = (
-                f"【対象URL】\n{url}\n\n"
-                f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
-                f"{llm_summary}" # LLMを使わない場合は空文字になる
-            )
+                # 通知メッセージの組み立て
+                notification_message = (
+                    f"【対象URL】\n{url}\n\n"
+                    # f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}" # ルールベースの結果通知はLLM要約があればいらないかな
+                    f"{llm_summary}" # LLMを使わない場合は空文字になる
+                )
+            else: # LLMを使わない場合
+                # 通知メッセージの組み立て
+                notification_message = (
+                    f"【対象URL】\n{url}\n\n"
+                    f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}" 
+                )
 
             send_ntfy_notification(
                 title="【更新検知】予約状況・内容が変わりました！",
