@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 import difflib
 import requests
@@ -17,10 +18,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # ==========================================
 client = None
 if GEMINI_API_KEY:
-    # 公式SDKのクライアント作成
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    MODEL = "gemini-2.5-flash"
 # ==========================================
 # オプション設定
 # ==========================================
@@ -32,6 +31,73 @@ DEFAULT_SELECTOR = "table"
 CUSTOM_SELECTORS = {
     1: "body",
 }
+
+
+def select_lightweight_model(client):
+    """
+    APIから利用可能なモデル一覧を取得し、バージョン文字列を数値化して自動比較する。
+    ハードコード一切なしで、その時点で最も新しい軽量モデル（flash/lite）を選定する。
+    """
+    fallback_model = "gemini-2.0-flash"  # 通信エラー等で取得できない場合の保険
+
+    try:
+        raw_models = client.models.list()
+        gemini_models = []
+
+        for m in raw_models:
+            name = m.name.replace("models/", "")
+            name_lower = name.lower()
+
+            # "gemini" を含むモデルのみを自動抽出
+            if "gemini" in name_lower:
+                # 軽量モデル判定 (flash または lite が含まれるか)
+                is_lightweight = "flash" in name_lower or "lite" in name_lower
+
+                # モデル名からバージョン番号 (例: "2.0", "2.5", "3.0") を正規表現で動的抽出
+                v_match = re.search(r"gemini-(\d+(?:\.\d+)*)", name_lower)
+                if v_match:
+                    # "2.0" -> (2, 0), "3.5.1" -> (3, 5, 1) のように数値配列化して大小比較可能にする
+                    v_tuple = tuple(map(int, v_match.group(1).split(".")))
+                else:
+                    v_tuple = (0, 0)
+
+                gemini_models.append(
+                    {
+                        "name": name,
+                        "version": v_tuple,
+                        "is_lightweight": is_lightweight,
+                        "is_lite": "lite" in name_lower,
+                        "is_flash": "flash" in name_lower,
+                    }
+                )
+
+        if not gemini_models:
+            print(f"利用可能なGeminiモデルが見つかりませんでした。デフォルト ({fallback_model}) を使用します。")
+            return fallback_model
+
+        # 優先度の高い順に並び替え（降順）:
+        # 1. 軽量モデル(flash/lite)であること (True > False)
+        # 2. バージョン数値が大きいこと ( (3,0) > (2,5) > (2,0) )
+        # 3. lite または flash 属性
+        sorted_models = sorted(
+            gemini_models,
+            key=lambda x: (
+                x["is_lightweight"],
+                x["version"],
+                x["is_lite"],
+                x["is_flash"],
+            ),
+            reverse=True,
+        )
+
+        selected = sorted_models[0]["name"]
+        selected_version = sorted_models[0]["version"]
+        print(f"【モデル解析・自動判定】最新軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
+        return selected
+
+    except Exception as e:
+        print(f"モデル一覧の動的解析中にエラーが発生しました ({e})。デフォルト ({fallback_model}) を使用します。")
+        return fallback_model
 
 
 def send_ntfy_notification(title, message):
@@ -88,9 +154,12 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """Google GenAI SDK を使って要約を生成する"""
+    """動的に選定した軽量モデルで要約を生成する"""
     if not client:
         return "（エラー: GEMINI_API_KEY が設定されていません）"
+
+    # バージョン番号を動的パースして最新の軽量モデルを選択
+    target_model = select_lightweight_model(client)
 
     prompt = f"""
         あなたはウェブサイトの監視アシスタントです。
@@ -106,17 +175,17 @@ def get_llm_summary(old_text, new_text):
         """
 
     try:
-        # 公式SDK経由でモデルを呼び出し（非常にシンプルかつ直感的）
+        # 動的に選ばれたモデル名（target_model）を使って生成
         response = client.models.generate_content(
-            model=MODEL,
+            model=target_model,
             contents=prompt,
         )
         summary = response.text.strip()
-        print("Gemini API (GenAI SDK) での要約生成に成功しました。")
+        print(f"Gemini API ({target_model}) での要約生成に成功しました。")
         return summary
 
     except Exception as e:
-        print(f"Gemini API エラー (GenAI SDK): {e}")
+        print(f"Gemini API エラー ({target_model}): {e}")
 
     return "（AI要約の取得に失敗しました）"
 
