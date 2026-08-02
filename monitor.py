@@ -104,8 +104,8 @@ def get_llm_summary(old_text, new_text):
 
     try:
         response = client.chat.completions.create(
-            # 最新の軽量モデル (Flash Lite) を指定
-            model="gemini-2.0-flash-lite",
+            # 無料枠（Free Tier）で確実に利用可能な標準モデル指定
+            model="gemini-1.5-flash",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.7
