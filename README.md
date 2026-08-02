@@ -6,3 +6,11 @@
 - GitHub actions（＝.github/workflowsのyamlにscheduleを書いて定期実行）は安定しないので、cron-job.orgに定期実行をさせている。
 - 定期実行の有無ではなく総実行時間で課金されるのでpublicのままの方がいい
 
+## LLM SDK
+- googleのsdkを使用：https://ai.google.dev/gemini-api/docs/migrate?hl=ja
+- openai互換にしてもいい：https://ai.google.dev/gemini-api/docs/openai?hl=ja
+- 
+
+## Gemini APIの料金一覧
+- https://ai.google.dev/gemini-api/docs/pricing?hl=ja
+
