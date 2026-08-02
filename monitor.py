@@ -41,7 +41,8 @@ def get_candidate_models(client):
     - 優先度3: 停止済み(404)を防ぐため、サポート中の最新バージョンを優先
     """
     # 通信エラーや取得失敗時の予備モデルリスト
-    fallback_candidates = ["gemini-3.1-flash-lite", 
+    fallback_candidates = ["gemini-3.5-flash-lite", 
+                           "gemini-3.1-flash-lite", 
                            "gemini-2.5-flash-lite", 
                            "gemini-2.5-flash", 
                            "gemini-2.0-flash-lite", 
