@@ -78,59 +78,55 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """Google Gemini API（直通REST API）で要約を生成する"""
+    """Google Gemini API（USプロキシ経由）で要約を生成する"""
     if not GEMINI_API_KEY:
         return "（エラー: GEMINI_API_KEYが設定されていません）"
 
     prompt = f"""
-あなたはウェブサイトの監視アシスタントです。
-以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
-どのような情報が更新されたのか、ユーザーがスマホの通知で一目でわかるように、簡潔な日本語で要約してください。
-挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
+        あなたはウェブサイトの監視アシスタントです。
+        以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
+        どのような情報が更新されたのか、ユーザーがスマホの通知で一目でわかるように、簡潔な日本語で要約してください。
+        挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
+        
+        【古いテキスト】
+        {old_text[:1000]}
+        
+        【新しいテキスト】
+        {new_text[:1000]}
+        """
 
-【古いテキスト】
-{old_text[:1000]}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 150, "temperature": 0.3}
+    }
 
-【新しいテキスト】
-{new_text[:1000]}
-"""
+    # 公開されているUSの無料プロキシ（例）：EUリージョンでの実行になるとgemini APIの無料枠が弾かれるため
+    proxies = {
+        "http": "http://154.21.27.8:3128",
+        "https": "http://154.21.27.8:3128",
+    }
 
-    # 試行する公式モデル名（優先順）
-    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            proxies=proxies,
+            timeout=15
+        )
 
-    for model_name in models:
-        # OpenAI SDKを使わず、Googleの直通エンドポイントを直接叩く
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }],
-            "generationConfig": {
-                "maxOutputTokens": 150,
-                "temperature": 0.3
-            }
-        }
+        if response.status_code == 200:
+            res_data = response.json()
+            return res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        else:
+            print(f"Gemini APIエラー ({response.status_code}): {response.text}")
 
-        try:
-            response = requests.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=15
-            )
-
-            if response.status_code == 200:
-                res_data = response.json()
-                summary = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                print(f"Gemini要約生成成功 (モデル: {model_name})")
-                return summary
-            else:
-                print(f"Gemini APIエラー [{model_name}] ({response.status_code}): {response.text}")
-
-        except Exception as e:
-            print(f"Gemini API通信エラー [{model_name}]: {e}")
+    except Exception as e:
+        print(f"Gemini API通信エラー: {e}")
 
     return "（AI要約の取得に失敗しました）"
+    
 
 
 def process_url(page, url, selector):
