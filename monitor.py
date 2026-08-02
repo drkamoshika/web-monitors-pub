@@ -107,8 +107,8 @@ def get_llm_summary(old_text, new_text):
             # 最新の軽量モデル (Flash Lite) を指定
             model="gemini-2.0-flash-lite-preview-02-05",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=150,
-            temperature=0.3
+            max_tokens=200,
+            temperature=0.7
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
