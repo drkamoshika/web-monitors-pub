@@ -22,7 +22,7 @@ if GEMINI_API_KEY:
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
     )
 
-    MODEL = "gemini-2.5-flash-lite"
+    MODEL = "gemini-2.5-flash"
 
 # ==========================================
 # オプション設定
