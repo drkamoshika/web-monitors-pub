@@ -33,16 +33,19 @@ CUSTOM_SELECTORS = {
     1: "body",
 }
 
-
+    
 def select_lightweight_model(client):
     """
-    APIから利用可能なモデル一覧を取得し、バージョン文字列を数値化して自動比較する。
-    ハードコード一切なしで、その時点で最も新しい軽量モデル（flash/lite）を選定する。
+    APIから利用可能なモデル一覧を取得し、軽量モデル(flash/lite)のみを対象に選定。
+    - lite > flash の順で優先 (より安価・軽量なモデル)
+    - バージョン数値は小さいものを優先 (1.5 < 2.0)
+    - pro などの非軽量モデルは完全に除外
     """
     fallback_model = "gemini-3.1-flash-lite"  # 通信エラー等で取得できない場合の保険
 
     if MODEL_PRESET:
         return fallback_model
+
     
     try:
         raw_models = client.models.list()
@@ -54,24 +57,24 @@ def select_lightweight_model(client):
 
             # "gemini" を含むモデルのみを自動抽出
             if "gemini" in name_lower:
-                # 軽量モデル判定 (flash または lite が含まれるか)
-                is_lightweight = "flash" in name_lower or "lite" in name_lower
+                is_lite = "lite" in name_lower
+                is_flash = "flash" in name_lower
+                is_lightweight = is_lite or is_flash
 
-                # モデル名からバージョン番号 (例: "2.0", "2.5", "3.0") を正規表現で動的抽出
+                # モデル名からバージョン番号 (例: "1.5", "2.0") を動的抽出
                 v_match = re.search(r"gemini-(\d+(?:\.\d+)*)", name_lower)
                 if v_match:
-                    # "2.0" -> (2, 0), "3.5.1" -> (3, 5, 1) のように数値配列化して大小比較可能にする
                     v_tuple = tuple(map(int, v_match.group(1).split(".")))
                 else:
-                    v_tuple = (0, 0)
+                    v_tuple = None  # バージョン不明
 
                 gemini_models.append(
                     {
                         "name": name,
                         "version": v_tuple,
                         "is_lightweight": is_lightweight,
-                        "is_lite": "lite" in name_lower,
-                        "is_flash": "flash" in name_lower,
+                        "is_lite": is_lite,
+                        "is_flash": is_flash,
                     }
                 )
 
@@ -79,30 +82,38 @@ def select_lightweight_model(client):
             print(f"利用可能なGeminiモデルが見つかりませんでした。デフォルト ({fallback_model}) を使用します。")
             return fallback_model
 
-        # 優先度の高い順に並び替え（降順）:
-        # 1. 軽量モデル(flash/lite)であること (True > False)
-        # 2. バージョン数値が小さいこと ( (3,0) < (2,5) < (2,0) )
-        # 3. lite または flash 属性
-        sorted_models = sorted(
-            gemini_models,
-            key=lambda x: (
-                x["is_lightweight"],
-                x["version"],
-                x["is_lite"],
-                x["is_flash"],
-            ),
-            reverse=False, # ここで順序を逆にできる
-        )
+        # 【重要】軽量モデル (flash または lite) のみを厳密にフィルタリング（proなどを除外）
+        lightweight_candidates = [m for m in gemini_models if m["is_lightweight"]]
+
+        # 万が一軽量モデルが1つも存在しない場合のみ、全モデルを対象にする
+        candidates = lightweight_candidates if lightweight_candidates else gemini_models
+
+        def get_sort_key(m):
+            # ① モデル種別のスコア: lite(2) > flash(1) > その他(0)
+            type_score = 2 if m["is_lite"] else (1 if m["is_flash"] else 0)
+
+            # ② バージョン数値の反転 (小さいバージョンを優先するためマイナス化)
+            # 例: (1, 5) -> (-1, -5), (2, 0) -> (-2, 0)
+            # 降順ソート(reverse=True)において (-1, -5) > (-2, 0) となるため 1.5 が優先される
+            if m["version"] is not None:
+                neg_version = tuple(-x for x in m["version"])
+            else:
+                neg_version = (-999,)  # バージョン不明は最下位
+
+            return (type_score, neg_version)
+
+        # 降順 (reverse=True) でソート
+        sorted_models = sorted(candidates, key=get_sort_key, reverse=True)
 
         selected = sorted_models[0]["name"]
         selected_version = sorted_models[0]["version"]
-        print(f"【モデル解析・自動判定】軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
+        print(f"【モデル解析・自動判定】最安軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
         return selected
 
     except Exception as e:
         print(f"モデル一覧の動的解析中にエラーが発生しました ({e})。デフォルト ({fallback_model}) を使用します。")
         return fallback_model
-
+        
 
 def send_ntfy_notification(title, message):
     """ntfy.shへプッシュ通知を送信する関数"""
