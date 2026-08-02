@@ -39,7 +39,7 @@ def select_lightweight_model(client):
     APIから利用可能なモデル一覧を取得し、バージョン文字列を数値化して自動比較する。
     ハードコード一切なしで、その時点で最も新しい軽量モデル（flash/lite）を選定する。
     """
-    fallback_model = "gemini-2.5-flash-lite"  # 通信エラー等で取得できない場合の保険
+    fallback_model = "gemini-3.1-flash-lite"  # 通信エラー等で取得できない場合の保険
 
     if MODEL_PRESET:
         return fallback_model
