@@ -2,7 +2,7 @@ import os
 import hashlib
 import difflib
 import requests
-from openai import OpenAI
+from google import genai
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
 # ==========================================
@@ -13,17 +13,14 @@ TARGET_URLS_RAW = os.getenv("TARGET_URL")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==========================================
-# OpenAI SDK の初期化 (Google Gemini 互換エンドポイント)
+# Google GenAI クライアントの初期化
 # ==========================================
 client = None
 if GEMINI_API_KEY:
-    client = OpenAI(
-        api_key=GEMINI_API_KEY,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-    )
+    # 公式SDKのクライアント作成
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
     MODEL = "gemini-2.5-flash"
-
 # ==========================================
 # オプション設定
 # ==========================================
@@ -91,7 +88,7 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """OpenAI SDK 経由で Gemini API を呼び出して要約を生成する"""
+    """Google GenAI SDK を使って要約を生成する"""
     if not client:
         return "（エラー: GEMINI_API_KEY が設定されていません）"
 
@@ -109,20 +106,17 @@ def get_llm_summary(old_text, new_text):
         """
 
     try:
-        response = client.chat.completions.create(
+        # 公式SDK経由でモデルを呼び出し（非常にシンプルかつ直感的）
+        response = client.models.generate_content(
             model=MODEL,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200,
-            temperature=0.7,
+            contents=prompt,
         )
-        summary = response.choices[0].message.content.strip()
-        print("Gemini API (OpenAI SDK) での要約生成に成功しました。")
+        summary = response.text.strip()
+        print("Gemini API (GenAI SDK) での要約生成に成功しました。")
         return summary
 
     except Exception as e:
-        print(f"Gemini API エラー (OpenAI SDK): {e}")
+        print(f"Gemini API エラー (GenAI SDK): {e}")
 
     return "（AI要約の取得に失敗しました）"
 
