@@ -173,6 +173,9 @@ def get_llm_summary(old_text, new_text):
     # 優先度順のモデル候補リストを取得
     candidate_models = get_candidate_models(client)
 
+
+    diff_summary = generate_diff_summary(last_text, current_text)
+    
     prompt = f"""
         あなたはウェブサイトの監視アシスタントです。
         以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
@@ -181,9 +184,14 @@ def get_llm_summary(old_text, new_text):
         
         【古いテキスト】
         {old_text[:1000]}
-        
+
+        【変更点】
+        {diff_summary[:1000]}
+                
         【新しいテキスト】
         {new_text[:1000]}
+
+
         """
 
     # 候補リストを順番に試す（万が一 404 やエラーが出ても次のモデルへ自動フォールバック）
