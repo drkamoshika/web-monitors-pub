@@ -25,6 +25,7 @@ if GEMINI_API_KEY:
 # ==========================================
 # LLM（Gemini）による要約機能を使うかどうか (True: 使う / False: 使わない)
 USE_LLM_SUMMARY = True
+MODEL_PRESET = True
 
 # 監視範囲（CSSセレクタ）の設定
 DEFAULT_SELECTOR = "table"
@@ -38,8 +39,11 @@ def select_lightweight_model(client):
     APIから利用可能なモデル一覧を取得し、バージョン文字列を数値化して自動比較する。
     ハードコード一切なしで、その時点で最も新しい軽量モデル（flash/lite）を選定する。
     """
-    fallback_model = "gemini-2.0-flash"  # 通信エラー等で取得できない場合の保険
+    fallback_model = "gemini-2.5-flash-lite"  # 通信エラー等で取得できない場合の保険
 
+    if MODEL_PRESET:
+        return fallback_model
+    
     try:
         raw_models = client.models.list()
         gemini_models = []
