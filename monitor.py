@@ -25,7 +25,7 @@ if GEMINI_API_KEY:
 # ==========================================
 # LLM（Gemini）による要約機能を使うかどうか (True: 使う / False: 使わない)
 USE_LLM_SUMMARY = True
-MODEL_PRESET = True
+MODEL_PRESET = False
 
 # 監視範囲（CSSセレクタ）の設定
 DEFAULT_SELECTOR = "table"
@@ -81,7 +81,7 @@ def select_lightweight_model(client):
 
         # 優先度の高い順に並び替え（降順）:
         # 1. 軽量モデル(flash/lite)であること (True > False)
-        # 2. バージョン数値が大きいこと ( (3,0) > (2,5) > (2,0) )
+        # 2. バージョン数値が小さいこと ( (3,0) < (2,5) < (2,0) )
         # 3. lite または flash 属性
         sorted_models = sorted(
             gemini_models,
@@ -91,12 +91,12 @@ def select_lightweight_model(client):
                 x["is_lite"],
                 x["is_flash"],
             ),
-            reverse=True,
+            reverse=False, # ここで順序を逆にできる
         )
 
         selected = sorted_models[0]["name"]
         selected_version = sorted_models[0]["version"]
-        print(f"【モデル解析・自動判定】最新軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
+        print(f"【モデル解析・自動判定】軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
         return selected
 
     except Exception as e:
