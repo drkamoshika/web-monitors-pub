@@ -235,7 +235,7 @@ def process_url(page, url, selector):
             # 通知メッセージの組み立て
             notification_message = (
                 f"【対象URL】\n{url}\n\n"
-                f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
+                # f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
                 f"{llm_summary}"
             )
 
