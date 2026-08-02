@@ -25,7 +25,6 @@ if GEMINI_API_KEY:
 # ==========================================
 # LLM（Gemini）による要約機能を使うかどうか (True: 使う / False: 使わない)
 USE_LLM_SUMMARY = True
-MODEL_PRESET = False
 
 # 監視範囲（CSSセレクタ）の設定
 DEFAULT_SELECTOR = "table"
@@ -33,87 +32,82 @@ CUSTOM_SELECTORS = {
     1: "body",
 }
 
-    
-def select_lightweight_model(client):
-    """
-    APIから利用可能なモデル一覧を取得し、軽量モデル(flash/lite)のみを対象に選定。
-    - lite > flash の順で優先 (より安価・軽量なモデル)
-    - バージョン数値は小さいものを優先 (1.5 < 2.0)
-    - pro などの非軽量モデルは完全に除外
-    """
-    fallback_model = "gemini-3.1-flash-lite"  # 通信エラー等で取得できない場合の保険
 
-    if MODEL_PRESET:
-        return fallback_model
+def get_candidate_models(client):
+    """
+    APIから利用可能なモデル一覧を取得し、優先順位付きの候補リストを返す。
+    - 優先度1: lite / flash などの軽量モデル (pro等を除外)
+    - 優先度2: -001 などの廃止予定スナップショットではなく、エイリアス名を優先
+    - 優先度3: 停止済み(404)を防ぐため、サポート中の最新バージョンを優先
+    """
+    # 通信エラーや取得失敗時の予備モデルリスト
+    fallback_candidates = ["gemini-3.1-flash-lite", 
+                           "gemini-2.5-flash-lite", 
+                           "gemini-2.5-flash", 
+                           "gemini-2.0-flash-lite", 
+                           "gemini-2.0-flash", 
+                           ]
 
-    
     try:
         raw_models = client.models.list()
-        gemini_models = []
+        candidates = []
 
         for m in raw_models:
             name = m.name.replace("models/", "")
             name_lower = name.lower()
 
-            # "gemini" を含むモデルのみを自動抽出
-            if "gemini" in name_lower:
-                is_lite = "lite" in name_lower
-                is_flash = "flash" in name_lower
-                is_lightweight = is_lite or is_flash
+            # テキスト生成 (generateContent) をサポートしているか確認
+            methods = getattr(m, "supported_generation_methods", [])
+            if methods and "generateContent" not in methods:
+                continue
 
-                # モデル名からバージョン番号 (例: "1.5", "2.0") を動的抽出
-                v_match = re.search(r"gemini-(\d+(?:\.\d+)*)", name_lower)
-                if v_match:
-                    v_tuple = tuple(map(int, v_match.group(1).split(".")))
-                else:
-                    v_tuple = None  # バージョン不明
+            if "gemini" not in name_lower:
+                continue
 
-                gemini_models.append(
-                    {
-                        "name": name,
-                        "version": v_tuple,
-                        "is_lightweight": is_lightweight,
-                        "is_lite": is_lite,
-                        "is_flash": is_flash,
-                    }
-                )
+            # pro などの非軽量モデルは完全に除外
+            is_lite = "lite" in name_lower
+            is_flash = "flash" in name_lower
+            if not (is_lite or is_flash):
+                continue
 
-        if not gemini_models:
-            print(f"利用可能なGeminiモデルが見つかりませんでした。デフォルト ({fallback_model}) を使用します。")
-            return fallback_model
+            # モデル名からバージョン番号を抽出し数値化
+            v_match = re.search(r"gemini-(\d+(?:\.\d+)*)", name_lower)
+            v_tuple = tuple(map(int, v_match.group(1).split("."))) if v_match else (0, 0)
 
-        # 【重要】軽量モデル (flash または lite) のみを厳密にフィルタリング（proなどを除外）
-        lightweight_candidates = [m for m in gemini_models if m["is_lightweight"]]
+            # 末尾が "-001", "-002" などのスナップショット名であるかを判定
+            is_snapshot = bool(re.search(r"-\d{3,}$", name_lower))
 
-        # 万が一軽量モデルが1つも存在しない場合のみ、全モデルを対象にする
-        candidates = lightweight_candidates if lightweight_candidates else gemini_models
+            candidates.append({
+                "name": name,
+                "version": v_tuple,
+                "is_lite": is_lite,
+                "is_flash": is_flash,
+                "is_snapshot": is_snapshot
+            })
 
-        def get_sort_key(m):
-            # ① モデル種別のスコア: lite(2) > flash(1) > その他(0)
-            type_score = 2 if m["is_lite"] else (1 if m["is_flash"] else 0)
+        if not candidates:
+            return fallback_candidates
 
-            # ② バージョン数値の反転 (小さいバージョンを優先するためマイナス化)
-            # 例: (1, 5) -> (-1, -5), (2, 0) -> (-2, 0)
-            # 降順ソート(reverse=True)において (-1, -5) > (-2, 0) となるため 1.5 が優先される
-            if m["version"] is not None:
-                neg_version = tuple(-x for x in m["version"])
-            else:
-                neg_version = (-999,)  # バージョン不明は最下位
+        # 優先順位のソート条件:
+        # 1. lite 優先 (lite: 2 > flash: 1)
+        # 2. スナップショットでない安定エイリアス名を優先 (True > False)
+        # 3. 廃止(404)を避けるため、アクティブな最新バージョンを優先
+        candidates.sort(
+            key=lambda x: (
+                2 if x["is_lite"] else 1,
+                not x["is_snapshot"],
+                x["version"]
+            ),
+            reverse=True
+        )
 
-            return (type_score, neg_version)
-
-        # 降順 (reverse=True) でソート
-        sorted_models = sorted(candidates, key=get_sort_key, reverse=True)
-
-        selected = sorted_models[0]["name"]
-        selected_version = sorted_models[0]["version"]
-        print(f"【モデル解析・自動判定】最安軽量モデルを選定しました: {selected} (解析バージョン: {selected_version})")
-        return selected
+        model_names = [c["name"] for c in candidates]
+        return model_names if model_names else fallback_candidates
 
     except Exception as e:
-        print(f"モデル一覧の動的解析中にエラーが発生しました ({e})。デフォルト ({fallback_model}) を使用します。")
-        return fallback_model
-        
+        print(f"モデル一覧の取得中にエラーが発生しました ({e})。フォールバックリストを使用します。")
+        return fallback_candidates
+
 
 def send_ntfy_notification(title, message):
     """ntfy.shへプッシュ通知を送信する関数"""
@@ -169,12 +163,14 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
 
 
 def get_llm_summary(old_text, new_text):
-    """動的に選定した軽量モデルで要約を生成する"""
+    """
+    動的に候補モデル一覧を取得し、成功するまで順番にリトライ生成を行う
+    """
     if not client:
         return "（エラー: GEMINI_API_KEY が設定されていません）"
 
-    # バージョン番号を動的パースして最新の軽量モデルを選択
-    target_model = select_lightweight_model(client)
+    # 優先度順のモデル候補リストを取得
+    candidate_models = get_candidate_models(client)
 
     prompt = f"""
         あなたはウェブサイトの監視アシスタントです。
@@ -189,18 +185,21 @@ def get_llm_summary(old_text, new_text):
         {new_text[:1000]}
         """
 
-    try:
-        # 動的に選ばれたモデル名（target_model）を使って生成
-        response = client.models.generate_content(
-            model=target_model,
-            contents=prompt,
-        )
-        summary = response.text.strip()
-        print(f"Gemini API ({target_model}) での要約生成に成功しました。")
-        return summary
+    # 候補リストを順番に試す（万が一 404 やエラーが出ても次のモデルへ自動フォールバック）
+    for model_name in candidate_models:
+        try:
+            print(f"【AI要約試行】モデル '{model_name}' で要約を呼び出し中...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            summary = response.text.strip()
+            print(f"【成功】Gemini API ({model_name}) での要約生成に成功しました。")
+            return summary
 
-    except Exception as e:
-        print(f"Gemini API エラー ({target_model}): {e}")
+        except Exception as e:
+            print(f"【警告】Gemini API エラー ({model_name}): {e}")
+            print("次の軽量モデル候補を試します...")
 
     return "（AI要約の取得に失敗しました）"
 
@@ -247,17 +246,12 @@ def process_url(page, url, selector):
                 print("LLMで要約を生成中...")
                 llm_summary = f"\n\n【AI要約】\n{get_llm_summary(last_text, current_text)}"
 
-                # 通知メッセージの組み立て
-                notification_message = (
-                    f"【対象URL】\n{url}\n\n"
-                    f"{llm_summary}"
-                )
-            else:
-                # 通知メッセージの組み立て
-                notification_message = (
-                    f"【対象URL】\n{url}\n\n"
-                    f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
-                )
+            # 通知メッセージの組み立て
+            notification_message = (
+                f"【対象URL】\n{url}\n\n"
+                f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
+                f"{llm_summary}"
+            )
 
             send_ntfy_notification(
                 title="【更新検知】予約状況・内容が変わりました！",
