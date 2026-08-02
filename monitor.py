@@ -3,21 +3,23 @@ import hashlib
 import difflib
 import requests
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
+from openai import OpenAI
 
 # ==========================================
 # 設定値の読み込み
 # ==========================================
 NTFY_TOPIC = os.getenv("NTFY_TOPIC")
 TARGET_URLS_RAW = os.getenv("TARGET_URL")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==========================================
+# オプション設定
+# ==========================================
+# LLM（Gemini）による要約機能を使うかどうか (True: 使う / False: 使わない)
+USE_LLM_SUMMARY = True
+
 # 監視範囲（CSSセレクタ）の設定
-# ==========================================
-# デフォルトのセレクタ（基本はこれを使います）
 DEFAULT_SELECTOR = "table"
-
-# URLの順番（0から始まる番号）に合わせて、個別のセレクタを指定します
-# 例: 0番目はそのままtable、1番目（2つ目のURL）はbodyにする場合
 CUSTOM_SELECTORS = {
     1: "body",
 }
@@ -52,14 +54,11 @@ def get_state_filename(url):
 
 
 def generate_diff_summary(old_text, new_text, max_lines=10):
-    """前回と今回のテキストを比較し、差分（追加・削除行）の抜粋を作成する"""
+    """ルールベースで差分（追加・削除行）の抜粋を作成する"""
     old_lines = old_text.splitlines()
     new_lines = new_text.splitlines()
 
-    # 行単位の差分（unified_diff）を取得
     diff = list(difflib.unified_diff(old_lines, new_lines, lineterm=""))
-
-    # ヘッダー（---, +++）を除外し、変化があった行（+ または - で始まる行）のみ抽出
     diff_lines = [
         line
         for line in diff
@@ -70,7 +69,6 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
     if not diff_lines:
         return "（明確なテキスト差分を抽出できませんでした）"
 
-    # 差分が長すぎる場合は指定行数でカットする
     if len(diff_lines) > max_lines:
         summary = "\n".join(diff_lines[:max_lines])
         summary += f"\n...他 {len(diff_lines) - max_lines} 行の変更あり"
@@ -78,6 +76,44 @@ def generate_diff_summary(old_text, new_text, max_lines=10):
         summary = "\n".join(diff_lines)
 
     return summary
+
+
+def get_llm_summary(old_text, new_text):
+    """OpenAI SDKを利用してGeminiに要約を依頼する"""
+    if not GEMINI_API_KEY:
+        return "（エラー: GEMINI_API_KEYが設定されていません）"
+
+    # OpenAI互換エンドポイントでGeminiクライアントを初期化
+    client = OpenAI(
+        api_key=GEMINI_API_KEY,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+
+    prompt = f"""
+        あなたはウェブサイトの監視アシスタントです。
+        以下の「古いテキスト」から「新しいテキスト」へ変更がありました。
+        どのような情報が更新されたのか、ユーザーがスマホの通知で一目でわかるように、簡潔な日本語で要約してください。
+        挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
+        
+        【古いテキスト】
+        {old_text[:1000]} # 長すぎる場合は先頭のみ
+        
+        【新しいテキスト】
+        {new_text[:1000]} # 長すぎる場合は先頭のみ
+        """
+
+    try:
+        response = client.chat.completions.create(
+            # 最新の軽量モデル (Flash Lite) を指定
+            model="gemini-2.0-flash-lite-preview-02-05",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.3
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"LLM要約の生成に失敗しました: {e}")
+        return "（LLM要約の生成に失敗しました）"
 
 
 def process_url(page, url, selector):
@@ -93,10 +129,8 @@ def process_url(page, url, selector):
         print(f"\n--- アクセス中: {url} ---")
         print(f"監視セレクタ: {selector}")
 
-        # アクセス処理（タイムアウト30秒）
         page.goto(url, wait_until="networkidle", timeout=30000)
 
-        # セレクタに基づいてテキストを取得
         if selector:
             texts = page.locator(selector).all_inner_texts()
             current_text = "\n".join(texts)
@@ -106,26 +140,29 @@ def process_url(page, url, selector):
             current_text = page.locator("body").inner_text()
 
         current_text = current_text.strip()
-
-        # 前回保存したテキスト状態の読み込み
         last_text = ""
+        
         if os.path.exists(state_file):
             with open(state_file, "r", encoding="utf-8") as f:
                 last_text = f.read().strip()
 
-        # 比較・判定と保存
         if last_text != "" and current_text != last_text:
             print(f"【検知】更新を確認: {url}")
 
-            # 差分の抜粋を生成
+            # 1. ルールベースの差分抜粋
             diff_summary = generate_diff_summary(last_text, current_text)
 
-            # ntfyに送信する本文を作成
+            # 2. LLMによる要約 (フラグがTrueの場合のみ実行)
+            llm_summary = ""
+            if USE_LLM_SUMMARY:
+                print("LLMで要約を生成中...")
+                llm_summary = f"\n\n【AI要約】\n{get_llm_summary(last_text, current_text)}"
+
+            # 通知メッセージの組み立て
             notification_message = (
                 f"【対象URL】\n{url}\n\n"
-                f"【変更の抜粋】\n"
-                f"(-: 削除 / +: 追加)\n"
-                f"{diff_summary}"
+                f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
+                f"{llm_summary}" # LLMを使わない場合は空文字になる
             )
 
             send_ntfy_notification(
@@ -166,7 +203,6 @@ def main():
         send_ntfy_notification("【設定エラー】", error_msg)
         return
 
-    # Secretsから改行区切りで取得し、空行を省いてリスト化する
     url_list = [u.strip() for u in TARGET_URLS_RAW.splitlines() if u.strip()]
 
     with sync_playwright() as p:
@@ -175,7 +211,6 @@ def main():
 
         try:
             for index, url in enumerate(url_list):
-                # カスタムセレクタが設定されていればそれを取得し、無ければデフォルトを使う
                 selector = CUSTOM_SELECTORS.get(index, DEFAULT_SELECTOR)
                 process_url(page, url, selector)
         finally:
@@ -184,3 +219,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
