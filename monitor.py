@@ -96,24 +96,32 @@ def get_llm_summary(old_text, new_text):
         挨拶や余計な説明は不要です。変更の要点のみを2〜3行程度で出力してください。
         
         【古いテキスト】
-        {old_text[:1000]} # 長すぎる場合は先頭のみ
+        {old_text[:1000]}
         
         【新しいテキスト】
-        {new_text[:1000]} # 長すぎる場合は先頭のみ
+        {new_text[:1000]}
         """
 
-    try:
-        response = client.chat.completions.create(
-            # 無料枠（Free Tier）で確実に利用可能な標準モデル指定
-            model="gemini-1.5-flash",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.7
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"LLM要約の生成に失敗しました: {e}")
-        return "（LLM要約の生成に失敗しました）"
+    # 無料枠で動作するモデルの候補一覧（優先順位順）
+    candidate_models = [
+        "gemini-2.0-flash",
+        "gemini-1.5-flash-latest"
+    ]
+
+    for model_name in candidate_models:
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150,
+                temperature=0.3
+            )
+            print(f"要約生成成功 (モデル: {model_name})")
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"モデル '{model_name}' での生成を試みましたがスキップします: {e}")
+
+    return "（LLM要約の取得に失敗しました）"
 
 
 def process_url(page, url, selector):
@@ -141,7 +149,7 @@ def process_url(page, url, selector):
 
         current_text = current_text.strip()
         last_text = ""
-        
+
         if os.path.exists(state_file):
             with open(state_file, "r", encoding="utf-8") as f:
                 last_text = f.read().strip()
@@ -156,20 +164,14 @@ def process_url(page, url, selector):
             llm_summary = ""
             if USE_LLM_SUMMARY:
                 print("LLMで要約を生成中...")
-                llm_summary = f"\n\n【要約】\n{get_llm_summary(last_text, current_text)}"
+                llm_summary = f"\n\n【AI要約】\n{get_llm_summary(last_text, current_text)}"
 
-                # 通知メッセージの組み立て
-                notification_message = (
-                    f"【対象URL】\n{url}\n\n"
-                    # f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}" # ルールベースの結果通知はLLM要約があればいらないかな
-                    f"{llm_summary}" # LLMを使わない場合は空文字になる
-                )
-            else: # LLMを使わない場合
-                # 通知メッセージの組み立て
-                notification_message = (
-                    f"【対象URL】\n{url}\n\n"
-                    f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}" 
-                )
+            # 通知メッセージの組み立て
+            notification_message = (
+                f"【対象URL】\n{url}\n\n"
+                f"【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
+                f"{llm_summary}"
+            )
 
             send_ntfy_notification(
                 title="【更新検知】予約状況・内容が変わりました！",
