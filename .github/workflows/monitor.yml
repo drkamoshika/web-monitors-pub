@@ -28,6 +28,9 @@ jobs:
           pip install requests playwright openai
           playwright install --with-deps chromium
 
+      - name: Check Runner IP and Country
+          run: curl -s https://ipinfo.io
+
       - name: Run Script
         env:
           # Secretsから2つの環境変数をPythonに渡す
