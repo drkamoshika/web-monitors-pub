@@ -174,7 +174,7 @@ def get_llm_summary(old_text, new_text):
     candidate_models = get_candidate_models(client)
 
 
-    diff_summary = generate_diff_summary(last_text, current_text)
+    diff_summary = generate_diff_summary(old_text, new_text)
     
     prompt = f"""
         あなたはウェブサイトの監視アシスタントです。
