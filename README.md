@@ -14,3 +14,5 @@
 ## Gemini APIの料金一覧
 - https://ai.google.dev/gemini-api/docs/pricing?hl=ja
 
+## 予約処理について
+- 「リストの先頭に書いた日付から順番にチェックし、どれか1つでも予約できたら（あるいは予約処理に入ったら）そこで即座に終了する」
