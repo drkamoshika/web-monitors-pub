@@ -63,9 +63,28 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
         print("エラー: 予約先のURL（RESERVE_URL / TARGET_URL）が設定されていません。")
         return False
 
-    payload_str = os.environ.get('PAYLOAD', '{}')
-    payload = json.loads(payload_str)
-    data = json.loads(payload['data_json']) if 'data_json' in payload else payload
+    # ------------------------------------------------------------------
+    # PAYLOAD の堅牢な解析処理（GitHub Actions Cron / Dispatch 双方対応）
+    # ------------------------------------------------------------------
+    payload_raw = os.environ.get('PAYLOAD', '{}')
+    
+    try:
+        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    except Exception:
+        payload = {}
+
+    # client_payload のラップを解除
+    if isinstance(payload, dict) and 'client_payload' in payload:
+        payload = payload['client_payload']
+
+    # data_json のラップを解除
+    if isinstance(payload, dict) and 'data_json' in payload:
+        try:
+            data = json.loads(payload['data_json']) if isinstance(payload['data_json'], str) else payload['data_json']
+        except Exception:
+            data = payload
+    else:
+        data = payload if isinstance(payload, dict) else {}
 
     if custom_data:
         data.update(custom_data)
@@ -156,19 +175,23 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
                     except Exception:
                         continue
 
-            # 入力項目
+            # --- 各項目の入力実行 ---
             select_field("宿泊人数", data.get('total_guests', '1'))
             select_field("男女内訳", data.get('male_guests', '1'), index=0)
             select_field("男女内訳", data.get('female_guests', '0'), index=1)
 
-            if data.get('youth_discount', '0') != '0':
+            if str(data.get('youth_discount', '0')) != '0':
+                select_field("ユース割引", data.get('youth_discount', '0'))
                 select_field("19-30", data.get('youth_discount', '0'))
-            if data.get('bento_count', '0') != '0':
+
+            if str(data.get('bento_count', '0')) != '0':
+                select_field("弁当の追加", data.get('bento_count', '0'))
                 select_field("昼弁当", data.get('bento_count', '0'))
 
             fill_field("お名前", data.get('name', ''))
             fill_field("ふりがな", data.get('furigana', ''))
 
+            # メールアドレス（2箇所入力対応）
             email = data.get('email', '')
             email_locs = page.locator('tr:has-text("メールアドレス") input, input[type="email"]')
             if email_locs.count() >= 2:
@@ -179,6 +202,7 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
 
             fill_field("郵便番号", data.get('zip', ''))
 
+            # 都道府県の選択
             pref_loc = page.locator('tr:has-text("ご住所") select').first
             try:
                 if pref_loc.is_visible(timeout=1000):
@@ -189,6 +213,7 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
             fill_field("ご住所", data.get('address', ''))
             fill_field("連絡先電話番号", data.get('phone', ''))
 
+            # 前・後泊地（入・下山口）
             prev_stay = data.get('prev_stay') or data.get('entry_point') or '新穂高口'
             next_stay = data.get('next_stay') or data.get('exit_point') or prev_stay
 
@@ -220,6 +245,7 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
 
             fill_field("自由記入", data.get('memo', ''), is_textarea=True)
 
+            # 同意チェックボックス
             cb = page.locator('input[type="checkbox"]').first
             if cb.is_visible(timeout=1000):
                 cb.check()
@@ -295,6 +321,7 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
         finally:
             browser.close()
 
+
 def check_and_run_reserve(target_days, execute_submit=False):
     """
     指定された日付リスト(target_days)の中に予約可能枠があるか判定し、あれば予約を実行する
@@ -342,4 +369,8 @@ def check_and_run_reserve(target_days, execute_submit=False):
     if found_date:
         run_reserve(target_date=found_date, execute_submit=execute_submit)
 
+
+if __name__ == "__main__":
+    # 単体実行のテスト用
+    pass
 
