@@ -243,7 +243,7 @@ def process_url(page, url, selector):
                 notification_message = (
                     f"{llm_summary}"
                     f"\n【対象URL】\n{url}\n"
-                    f"\n【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
+                    # f"\n【変更の抜粋 (-削除 / +追加)】\n{diff_summary}"
                 )
             else:
                 notification_message = (
