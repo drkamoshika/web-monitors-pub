@@ -1,6 +1,7 @@
 # web-monitors-pub
 - 複数web監視＋通知ツール。
 - 監視したいwebサイトはsecretsに改行区切りで登録すること。
+- 監視後、指定した日に予約実行もする関数を追加。
 
 ## 定期実行について
 - GitHub actions（＝.github/workflowsのyamlにscheduleを書いて定期実行）は安定しないので、cron-job.orgに定期実行をさせている。
