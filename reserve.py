@@ -295,24 +295,23 @@ def run_reserve(target_date, execute_submit=False, custom_data=None):
         finally:
             browser.close()
 
-
 def check_and_run_reserve(target_days, execute_submit=False):
     """
     指定された日付リスト(target_days)の中に予約可能枠があるか判定し、あれば予約を実行する
     """
-
-    # ★空リストの場合はブラウザを起動せずに即終了する
     if not target_days:
         print("TARGET_DAYS が空のため、自動予約チェックをスキップします。")
         return
-    
+
     reserve_url = get_target_url()
     if not reserve_url:
         print("予約URLが設定されていないため、自動予約チェックをスキップします。")
         return
 
     print("\n--- 自動予約チェック開始 ---")
+    found_date = None
 
+    # 1. チェック用ブラウザを起動して空き枠を探す
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
@@ -329,18 +328,18 @@ def check_and_run_reserve(target_days, execute_submit=False):
                 link = page.locator(f'a[href*="{yymmdd}"]')
                 if link.count() > 0:
                     print(f"【朗報】{target_date} の空き枠を検知しました！予約処理を開始します。")
-                    browser.close()  # チェック用ブラウザを閉じて予約処理へ
-                    run_reserve(target_date=target_date, execute_submit=execute_submit)
-                    return
+                    found_date = target_date
+                    break
                 else:
                     print(f"{target_date} の空き枠はありませんでした。")
 
         except Exception as e:
             print(f"自動予約チェック中にエラーが発生しました: {e}")
         finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
+            browser.close()
+
+    # 2. チェック用Playwrightブロックを完全に抜けた「後」で予約実行関数を呼び出す（二重起動を回避）
+    if found_date:
+        run_reserve(target_date=found_date, execute_submit=execute_submit)
 
 
