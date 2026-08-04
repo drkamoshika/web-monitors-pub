@@ -38,6 +38,8 @@ jobs:
           TARGET_URL: ${{ secrets.TARGET_URL }}
           # 【変更点】 GeminiのAPIキーを環境変数として渡す
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # reserve.py用の入力情報
+          PAYLOAD: ${{ secrets.PAYLOAD }}
         run: python monitor.py
 
       - name: Commit state change
