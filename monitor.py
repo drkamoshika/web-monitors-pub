@@ -13,11 +13,11 @@ import reserve
 # 狙い目の日付・自動予約の設定
 # ==========================================
 # 予約を狙う日付リスト（冒頭で自由に変更可能）
-TARGET_DAYS = ["2026-10-01", "2026-10-02"]
+TARGET_DAYS = ["2026-09-26", "2026-09-27"]
 
 # 本当に最後の送信ボタンを押すかどうか
-# AUTO_RESERVE_EXECUTE_SUBMIT = True   # 本番（自動送信まで実行）
-AUTO_RESERVE_EXECUTE_SUBMIT = False  # テスト（確認画面止め）
+AUTO_RESERVE_EXECUTE_SUBMIT = True   # 本番（自動送信まで実行）
+# AUTO_RESERVE_EXECUTE_SUBMIT = False  # テスト（確認画面止め）
 
 # ==========================================
 # 設定値の読み込み
