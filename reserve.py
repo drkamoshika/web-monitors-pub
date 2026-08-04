@@ -23,7 +23,7 @@ def send_ntfy(message, image_path=None):
             filename = os.path.basename(image_path)
             params = {
                 "file": filename,
-                "title": "山荘自動予約リポート",
+                "title": "自動予約レポート",
                 "message": message
             }
             with open(image_path, 'rb') as f:
@@ -32,7 +32,7 @@ def send_ntfy(message, image_path=None):
             requests.post(
                 url,
                 data=message.encode('utf-8'),
-                headers={"Title": "山荘自動予約リポート"},
+                headers={"Title": "自動予約レポート"},
                 timeout=10
             )
     except Exception as e:
