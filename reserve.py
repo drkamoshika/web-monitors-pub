@@ -300,6 +300,12 @@ def check_and_run_reserve(target_days, execute_submit=False):
     """
     指定された日付リスト(target_days)の中に予約可能枠があるか判定し、あれば予約を実行する
     """
+
+    # ★空リストの場合はブラウザを起動せずに即終了する
+    if not target_days:
+        print("TARGET_DAYS が空のため、自動予約チェックをスキップします。")
+        return
+    
     reserve_url = get_target_url()
     if not reserve_url:
         print("予約URLが設定されていないため、自動予約チェックをスキップします。")
