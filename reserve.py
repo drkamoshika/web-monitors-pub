@@ -294,7 +294,7 @@ def process_single_reservation(reserve_url, target_days, data, execute_submit, r
             browser.close()
 
 
-def check_and_run_reserve(default_target_days=None, execute_submit=False):
+def check_and_run_reserve(target_days=None, execute_submit=False):
     """
     PAYLOAD内の予約件数分（1件〜複数件）をループして直列実行するエントリーポイント
     """
@@ -303,7 +303,7 @@ def check_and_run_reserve(default_target_days=None, execute_submit=False):
         print("予約URLが設定されていないためスキップします。")
         return
 
-    # PAYLOAD のパース（単一オブジェクト・リスト・ネスト全て対応）
+    # PAYLOAD のパース
     payload_raw = os.environ.get('PAYLOAD', '{}')
     try:
         parsed = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
@@ -325,8 +325,8 @@ def check_and_run_reserve(default_target_days=None, execute_submit=False):
     print(f"\n--- 自動予約チェック開始（総タスク数: {len(reservation_list)}件） ---")
 
     for idx, item in enumerate(reservation_list, start=1):
-        # 個別設定の target_days がなければ関数の引数(default_target_days)を使用
-        task_target_days = item.get('target_days') or default_target_days or []
+        # PAYLOAD個別の target_days があればそれを優先、無ければ monitor.py から渡された target_days を使用
+        task_target_days = item.get('target_days') or target_days or []
         
         if not task_target_days:
             print(f"タスク[{idx}]: 対象日付(target_days)が設定されていないためスキップします。")
@@ -343,9 +343,8 @@ def check_and_run_reserve(default_target_days=None, execute_submit=False):
 
 def run_reserve(target_date, execute_submit=False, custom_data=None):
     """単一実行互換用"""
-    check_and_run_reserve(default_target_days=[target_date], execute_submit=execute_submit)
+    check_and_run_reserve(target_days=[target_date], execute_submit=execute_submit)
 
 
 if __name__ == "__main__":
     pass
-
