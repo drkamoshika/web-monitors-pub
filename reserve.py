@@ -39,7 +39,7 @@ def send_ntfy(message, image_path=None):
 
 
 def robust_click(page, selectors, description="要素"):
-    """複数セレクターを順番に試行してクリック（高速化のためタイムアウト500ms）"""
+    """複数セレクターを順番に試行してクリック"""
     for selector in selectors:
         try:
             loc = page.locator(selector).first
@@ -52,41 +52,10 @@ def robust_click(page, selectors, description="要素"):
     return False
 
 
-def check_and_run_reserve(target_days, execute_submit=False):
-    """
-    指定された日付リスト(target_days)をチェックし、
-    空きがあれば1回のブラウザ起動でそのまま予約完了まで実行する
-    """
-    if not target_days:
-        print("TARGET_DAYS が空のため、自動予約チェックをスキップします。")
-        return
+def process_single_reservation(reserve_url, target_days, data, execute_submit, reserve_index=1):
+    """1件分の予約処理を独立したブラウザインスタンスで実行"""
+    print(f"\n=== 予約タスク [{reserve_index}] 開始: 予約者 {data.get('name', '未設定')} ===")
 
-    reserve_url = get_target_url()
-    if not reserve_url:
-        print("予約URLが設定されていないため、自動予約チェックをスキップします。")
-        return
-
-    print("\n--- 自動予約チェック＆実行開始 ---")
-
-    # 1. PAYLOAD の安全なデコード
-    payload_raw = os.environ.get('PAYLOAD', '{}')
-    try:
-        payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
-    except Exception:
-        payload = {}
-
-    if isinstance(payload, dict) and 'client_payload' in payload:
-        payload = payload['client_payload']
-
-    if isinstance(payload, dict) and 'data_json' in payload:
-        try:
-            data = json.loads(payload['data_json']) if isinstance(payload['data_json'], str) else payload['data_json']
-        except Exception:
-            data = payload
-    else:
-        data = payload if isinstance(payload, dict) else {}
-
-    # 2. 単一のブラウザセッションで判定から予約までを一括実行
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
@@ -102,31 +71,29 @@ def check_and_run_reserve(target_days, execute_submit=False):
             found_date = None
             found_yymmdd = None
 
-            # 対象日の空き枠判定
             for target_date in target_days:
                 dt = datetime.strptime(target_date, '%Y-%m-%d')
                 yymmdd = dt.strftime('%y%m%d')
 
                 link = page.locator(f'a[href*="{yymmdd}"]')
                 if link.count() > 0:
-                    print(f"【朗報】{target_date} の空き枠を検知しました！")
+                    print(f"【朗報】タスク[{reserve_index}]: {target_date} の空き枠を検知しました！")
                     found_date = target_date
                     found_yymmdd = yymmdd
                     break
                 else:
-                    print(f"{target_date} の空き枠はありませんでした。")
+                    print(f"タスク[{reserve_index}]: {target_date} の空き枠はありませんでした。")
 
             if not found_date:
-                print("該当する空き枠が見つからなかったため、予約処理を終了します。")
+                print(f"タスク[{reserve_index}]: 空き枠がないためスキップします。")
                 return
 
-            # --- 空き枠が見つかったため、そのまま同一ページで予約を進める ---
             dt = datetime.strptime(found_date, '%Y-%m-%d')
             date_label = dt.strftime('%Y年%m月%d日')
 
-            img1 = f"01_calendar_{found_yymmdd}.png"
+            img1 = f"01_calendar_task{reserve_index}_{found_yymmdd}.png"
             page.screenshot(path=img1, full_page=True)
-            send_ntfy(f"【自動予約開始】{date_label} 選択直前", img1)
+            send_ntfy(f"【予約開始 - 件数{reserve_index}】{date_label} ({data.get('name')})", img1)
 
             date_selectors = [
                 f'a[href*="{found_yymmdd}"]',
@@ -139,9 +106,8 @@ def check_and_run_reserve(target_days, execute_submit=False):
             # [画面2] プラン選択画面
             page.wait_for_load_state('domcontentloaded')
 
-            img2 = f"02_plan_{found_yymmdd}.png"
+            img2 = f"02_plan_task{reserve_index}_{found_yymmdd}.png"
             page.screenshot(path=img2, full_page=True)
-            send_ntfy(f"【画面2: プラン選択】{date_label} ご予約ボタン押下直前", img2)
 
             reserve_button_selectors = [
                 'a[href*="f2.asp"]',
@@ -169,7 +135,7 @@ def check_and_run_reserve(target_days, execute_submit=False):
                 for sel in selectors:
                     try:
                         loc = page.locator(sel).first
-                        if loc.is_visible(timeout=200): # 高速化のため待ち時間を200msに短縮
+                        if loc.is_visible(timeout=200):
                             loc.fill(str(value))
                             return
                     except Exception:
@@ -189,7 +155,7 @@ def check_and_run_reserve(target_days, execute_submit=False):
                     except Exception:
                         continue
 
-            # 各項目の自動入力
+            # 自動入力実行
             select_field("宿泊人数", data.get('total_guests', '1'))
             select_field("男女内訳", data.get('male_guests', '1'), index=0)
             select_field("男女内訳", data.get('female_guests', '0'), index=1)
@@ -260,9 +226,9 @@ def check_and_run_reserve(target_days, execute_submit=False):
             if cb.is_visible(timeout=200):
                 cb.check()
 
-            img3 = f"03_form_{found_yymmdd}.png"
+            img3 = f"03_form_task{reserve_index}_{found_yymmdd}.png"
             page.screenshot(path=img3, full_page=True)
-            send_ntfy(f"【画面3: フォーム入力】{date_label} 「次へ」押下直前", img3)
+            send_ntfy(f"【画面3: フォーム入力 - 件数{reserve_index}】{date_label} 「次へ」押下直前", img3)
 
             next_button_selectors = ['input[value*="次"]', 'button:has-text("次")', 'input[type="submit"]']
             robust_click(page, next_button_selectors, "次へボタン")
@@ -277,19 +243,19 @@ def check_and_run_reserve(target_days, execute_submit=False):
             is_confirm_page = page.locator('td:has-text("2.予約内容の確認"), div:has-text("2.予約内容の確認")').count() > 0
 
             if has_error or not is_confirm_page:
-                err_img = f"error_validation_{found_yymmdd}.png"
+                err_img = f"error_validation_task{reserve_index}_{found_yymmdd}.png"
                 page.screenshot(path=err_img, full_page=True)
                 raise Exception("フォームの必須入力欄にエラーがあるため、確認画面に進めませんでした。")
 
-            img4 = f"04_confirm_{found_yymmdd}.png"
+            img4 = f"04_confirm_task{reserve_index}_{found_yymmdd}.png"
             page.screenshot(path=img4, full_page=True)
 
             if not execute_submit:
-                send_ntfy(f"【確認画面到達】{date_label} （※自動送信オフモードのため送信ボタンは押さずに終了します）", img4)
-                print("execute_submit が False のため、最終送信を行わずに完了しました。")
+                send_ntfy(f"【確認画面到達 - 件数{reserve_index}】{date_label} （※自動送信オフモードのため完了）", img4)
+                print(f"タスク[{reserve_index}]: execute_submit が False のため送信せずに完了。")
                 return
 
-            send_ntfy(f"【画面4: 確認画面】{date_label} 最終送信ボタン押下直前", img4)
+            send_ntfy(f"【画面4: 確認画面 - 件数{reserve_index}】{date_label} 最終送信直前", img4)
 
             # [画面5] 最終送信実行
             final_submit_selectors = [
@@ -315,22 +281,69 @@ def check_and_run_reserve(target_days, execute_submit=False):
 
             page.wait_for_load_state('domcontentloaded')
 
-            img5 = f"05_completion_{found_yymmdd}.png"
+            img5 = f"05_completion_task{reserve_index}_{found_yymmdd}.png"
             page.screenshot(path=img5, full_page=True)
-            send_ntfy(f"【予約完全完了】{date_label} 予約送信が完了しました！", img5)
+            send_ntfy(f"【予約完全完了 - 件数{reserve_index}】{date_label} 予約完了！", img5)
 
         except Exception as e:
-            err_img = f"error_run.png"
+            err_img = f"error_task{reserve_index}.png"
             page.screenshot(path=err_img, full_page=True)
-            send_ntfy(f"【エラー発生】処理中断: {str(e)}", err_img)
+            send_ntfy(f"【エラー発生 - 件数{reserve_index}】処理中断: {str(e)}", err_img)
 
         finally:
             browser.close()
 
 
+def check_and_run_reserve(default_target_days=None, execute_submit=False):
+    """
+    PAYLOAD内の予約件数分（1件〜複数件）をループして直列実行するエントリーポイント
+    """
+    reserve_url = get_target_url()
+    if not reserve_url:
+        print("予約URLが設定されていないためスキップします。")
+        return
+
+    # PAYLOAD のパース（単一オブジェクト・リスト・ネスト全て対応）
+    payload_raw = os.environ.get('PAYLOAD', '{}')
+    try:
+        parsed = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    except Exception:
+        parsed = {}
+
+    if isinstance(parsed, dict) and 'client_payload' in parsed:
+        parsed = parsed['client_payload']
+
+    if isinstance(parsed, dict) and 'data_json' in parsed:
+        try:
+            parsed = json.loads(parsed['data_json'])
+        except Exception:
+            pass
+
+    # リスト形式（複数予約）でなければ要素1つのリストに変換
+    reservation_list = parsed if isinstance(parsed, list) else [parsed]
+
+    print(f"\n--- 自動予約チェック開始（総タスク数: {len(reservation_list)}件） ---")
+
+    for idx, item in enumerate(reservation_list, start=1):
+        # 個別設定の target_days がなければ関数の引数(default_target_days)を使用
+        task_target_days = item.get('target_days') or default_target_days or []
+        
+        if not task_target_days:
+            print(f"タスク[{idx}]: 対象日付(target_days)が設定されていないためスキップします。")
+            continue
+
+        process_single_reservation(
+            reserve_url=reserve_url,
+            target_days=task_target_days,
+            data=item,
+            execute_submit=execute_submit,
+            reserve_index=idx
+        )
+
+
 def run_reserve(target_date, execute_submit=False, custom_data=None):
-    """直接日付指定で予約を実行したい場合の互換用関数"""
-    check_and_run_reserve([target_date], execute_submit=execute_submit)
+    """単一実行互換用"""
+    check_and_run_reserve(default_target_days=[target_date], execute_submit=execute_submit)
 
 
 if __name__ == "__main__":
