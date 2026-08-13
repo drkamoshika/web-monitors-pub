@@ -21,6 +21,14 @@ TARGET_DAYS = ["2026-10-03","2026-10-04"]
 # 例: None や [] ➔ 全件実行
 TARGET_INDICES = [2, 3, 5]
 
+# memo
+# 1.Yx3
+# 2.Yx2
+# 3.Yx1
+# 4.Sx1
+# 5.Nx1
+
+
 # 本当に最後の送信ボタンを押すかどうか
 AUTO_RESERVE_EXECUTE_SUBMIT = True   # 本番（自動送信まで実行）
 # AUTO_RESERVE_EXECUTE_SUBMIT = False  # テスト（確認画面止め）
