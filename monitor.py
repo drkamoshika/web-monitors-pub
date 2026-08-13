@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import hashlib
 import difflib
 import requests
@@ -13,7 +14,12 @@ import reserve
 # 狙い目の日付・自動予約の設定
 # ==========================================
 # 予約を狙う日付リスト（冒頭で自由に変更可能）
-TARGET_DAYS = []
+TARGET_DAYS = ["2026-10-03","2026-10-04"]
+
+# 実行したいタスク番号（PAYLOADの何件目を実行するか）
+# 例: [2, 3, 4] ➔ 2, 3, 4件目のみ実行（1件目はスキップ）
+# 例: None や [] ➔ 全件実行
+TARGET_INDICES = [2, 3, 5]
 
 # 本当に最後の送信ボタンを押すかどうか
 AUTO_RESERVE_EXECUTE_SUBMIT = True   # 本番（自動送信まで実行）
@@ -42,6 +48,20 @@ DEFAULT_SELECTOR = "table"
 CUSTOM_SELECTORS = {
     1: "body",
 }
+
+
+def filter_payload_by_indices(target_indices):
+    """指定されたインデックスのタスクだけに PAYLOAD を絞り込む"""
+    payload_raw = os.environ.get('PAYLOAD', '[]')
+    try:
+        data = json.loads(payload_raw)
+        if isinstance(data, list) and target_indices:
+            # 1始まりのインデックスをPythonの0始まりに変換して抽出
+            filtered = [item for i, item in enumerate(data, start=1) if i in target_indices]
+            os.environ['PAYLOAD'] = json.dumps(filtered, ensure_ascii=False)
+            print(f"※実行対象タスクを {target_indices} 番（計 {len(filtered)} 件）に制限しました。")
+    except Exception as e:
+        print(f"PAYLOADのフィルタリングに失敗しました（全件実行します）: {e}")
 
 
 def get_candidate_models(client):
@@ -304,6 +324,9 @@ def main():
             browser.close()
 
     # 2. ★一連の監視完了後、reserve.py を呼び出して空き枠チェック＆自動予約を実行
+    if TARGET_INDICES:
+        filter_payload_by_indices(TARGET_INDICES)
+
     reserve.check_and_run_reserve(
         target_days=TARGET_DAYS,
         execute_submit=AUTO_RESERVE_EXECUTE_SUBMIT
@@ -312,4 +335,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
